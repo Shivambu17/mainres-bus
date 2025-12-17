@@ -1,0 +1,78 @@
+# MainRes Bus System - Requirements
+# PHP Version: 7.4 or higher
+# MySQL Version: 5.7 or higher
+
+# Required PHP Extensions:
+- mysqli (for database connectivity)
+- gd (for image processing - QR codes)
+- mbstring (for multibyte string handling)
+- json (for API responses)
+- openssl (for secure connections)
+- session (for user sessions)
+
+# Recommended PHP Settings:
+- memory_limit = 256M
+- upload_max_filesize = 10M
+- post_max_size = 10M
+- max_execution_time = 300
+- date.timezone = Africa/Johannesburg
+
+# Server Requirements:
+- Web server (Apache 2.4+ or Nginx 1.14+)
+- MySQL 5.7+ or MariaDB 10.3+
+- SSL Certificate (for production)
+- 1GB RAM minimum
+- 100MB disk space
+
+# Optional Dependencies:
+- QR code generation library (phpqrcode)
+- Email sending (SMTP server)
+- SMS gateway (for SMS notifications)
+
+# Browser Requirements:
+- Modern browsers (Chrome 60+, Firefox 60+, Safari 12+, Edge 79+)
+- JavaScript enabled
+- Cookies enabled
+
+# Security Requirements:
+- HTTPS/SSL certificate
+- Regular security updates
+- Database backups
+- Firewall configuration
+
+# Setup Instructions:
+1. Install PHP 7.4+ with required extensions
+2. Install MySQL 5.7+ and create database
+3. Configure web server (Apache/Nginx)
+4. Set proper file permissions (755 for folders, 644 for files)
+5. Configure database in config.php
+6. Run db_setup.php to create tables
+7. Set up SSL certificate for production
+8. Configure email settings for notifications
+
+# Testing Requirements:
+- Test with 200+ concurrent users
+- Test booking system under load
+- Test QR code scanning
+- Test all user roles
+- Test mobile responsiveness
+
+# Backup Requirements:
+- Daily database backups
+- Weekly file backups
+- Offsite backup storage
+- Backup verification
+
+# Monitoring Requirements:
+- Error logging
+- User activity logs
+- Performance monitoring
+- Security monitoring
+- Uptime monitoring
+
+# Maintenance Tasks:
+- Regular database optimization
+- Log file rotation
+- Security updates
+- Performance tuning
+- User feedback collection

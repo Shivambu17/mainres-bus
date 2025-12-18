@@ -10,8 +10,13 @@ if (!isLoggedIn() || !isDriver()) {
 $driver_id = $_SESSION['user_id'];
 $filter = isset($_GET['filter']) ? sanitize($_GET['filter']) : 'upcoming';
 
+// Get driver information - REMOVED: assigned_bus_id reference
+$driver_query = "SELECT * FROM drivers WHERE driver_id = '$driver_id'";
+$driver_result = mysqli_query($conn, $driver_query);
+$driver_info = mysqli_fetch_assoc($driver_result) ?? [];
+
 // Get trips based on filter
-$query = "SELECT t.*, b.bus_number,
+$query = "SELECT t.*, b.bus_number, b.capacity,
           (SELECT COUNT(*) FROM bookings bk WHERE bk.trip_id = t.trip_id AND bk.status = 'confirmed') as booked_count,
           (SELECT COUNT(*) FROM attendance a 
            JOIN bookings bk ON a.booking_id = bk.booking_id 
@@ -43,7 +48,7 @@ $trips_result = mysqli_query($conn, $query);
 $week_start = date('Y-m-d', strtotime('monday this week'));
 $week_end = date('Y-m-d', strtotime('sunday this week'));
 
-$weekly_schedule_query = "SELECT t.*, b.bus_number,
+$weekly_schedule_query = "SELECT t.*, b.bus_number, b.capacity,
                          DAYNAME(t.trip_date) as day_name,
                          (SELECT COUNT(*) FROM bookings bk WHERE bk.trip_id = t.trip_id AND bk.status = 'confirmed') as booked_count
                          FROM trips t
@@ -73,7 +78,10 @@ $stats_query = "SELECT
                 WHERE t.driver_id = '$driver_id'
                 AND t.trip_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)";
 $stats_result = mysqli_query($conn, $stats_query);
-$stats = mysqli_fetch_assoc($stats_result);
+$stats = mysqli_fetch_assoc($stats_result) ?? [];
+
+// Also fix the round() function issue
+$avg_passengers = $stats['avg_passengers'] ?? 0;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -120,6 +128,9 @@ $stats = mysqli_fetch_assoc($stats_result);
                     <span class="current-week">
                         Week of <?php echo date('M j', strtotime($week_start)); ?> - <?php echo date('M j, Y', strtotime($week_end)); ?>
                     </span>
+                    <span class="driver-info">
+                        <?php echo htmlspecialchars($driver_info['license_number'] ?? 'Driver'); ?>
+                    </span>
                 </div>
             </header>
 
@@ -130,7 +141,7 @@ $stats = mysqli_fetch_assoc($stats_result);
                         <i class="fas fa-route"></i>
                     </div>
                     <div class="stat-info">
-                        <h3><?php echo $stats['total_trips']; ?></h3>
+                        <h3><?php echo $stats['total_trips'] ?? 0; ?></h3>
                         <p>Total Trips (30 days)</p>
                     </div>
                 </div>
@@ -139,7 +150,7 @@ $stats = mysqli_fetch_assoc($stats_result);
                         <i class="fas fa-check-circle"></i>
                     </div>
                     <div class="stat-info">
-                        <h3><?php echo $stats['completed_trips']; ?></h3>
+                        <h3><?php echo $stats['completed_trips'] ?? 0; ?></h3>
                         <p>Completed Trips</p>
                     </div>
                 </div>
@@ -148,7 +159,7 @@ $stats = mysqli_fetch_assoc($stats_result);
                         <i class="fas fa-users"></i>
                     </div>
                     <div class="stat-info">
-                        <h3><?php echo $stats['total_passengers']; ?></h3>
+                        <h3><?php echo $stats['total_passengers'] ?? 0; ?></h3>
                         <p>Total Passengers</p>
                     </div>
                 </div>
@@ -157,7 +168,7 @@ $stats = mysqli_fetch_assoc($stats_result);
                         <i class="fas fa-chart-line"></i>
                     </div>
                     <div class="stat-info">
-                        <h3><?php echo round($stats['avg_passengers']); ?></h3>
+                        <h3><?php echo round($avg_passengers); ?></h3>
                         <p>Avg. Passengers/Trip</p>
                     </div>
                 </div>
@@ -275,7 +286,7 @@ $stats = mysqli_fetch_assoc($stats_result);
                                             <div class="passenger-info">
                                                 <span><?php echo $trip['booked_count']; ?> booked</span>
                                                 <div class="mini-capacity-bar">
-                                                    <div class="mini-fill" style="width: <?php echo min(($trip['booked_count'] / BUS_CAPACITY) * 100, 100); ?>%"></div>
+                                                    <div class="mini-fill" style="width: <?php echo min(($trip['booked_count'] / ($trip['capacity'] ?? BUS_CAPACITY)) * 100, 100); ?>%"></div>
                                                 </div>
                                             </div>
                                         </td>
@@ -399,13 +410,21 @@ $stats = mysqli_fetch_assoc($stats_result);
 
         function exportPassengerLists() {
             // Get all trips data
-            const trips = <?php echo json_encode(mysqli_fetch_all($trips_result, MYSQLI_ASSOC)); ?>;
+            const trips = <?php 
+                // Reset pointer to beginning
+                mysqli_data_seek($trips_result, 0);
+                $all_trips = [];
+                while ($trip = mysqli_fetch_assoc($trips_result)) {
+                    $all_trips[] = $trip;
+                }
+                echo json_encode($all_trips); 
+            ?>;
             
             // Create passenger list CSV
-            let csv = 'Date,Time,Route,Bus,Passenger Count,Scanned Count,Status\n';
+            let csv = 'Date,Time,Route,Bus,Capacity,Booked Count,Scanned Count,Status\n';
             
             trips.forEach(trip => {
-                csv += `"${trip.trip_date}","${trip.departure_time}","${trip.route}","${trip.bus_number}",${trip.booked_count},${trip.scanned_count},"${trip.status}"\n`;
+                csv += `"${trip.trip_date}","${trip.departure_time}","${trip.route}","${trip.bus_number}",${trip.capacity},${trip.booked_count},${trip.scanned_count},"${trip.status}"\n`;
             });
             
             downloadCSV(csv, 'passenger_lists_' + new Date().toISOString().split('T')[0] + '.csv');

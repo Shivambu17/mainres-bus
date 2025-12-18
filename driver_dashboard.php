@@ -2,21 +2,47 @@
 require_once 'config.php';
 require_once 'functions.php';
 
-// Check if user is logged in and is a driver
-if (!isLoggedIn() || !isDriver()) {
+// Check if user is logged in
+if (!isLoggedIn()) {
     redirect('login.php');
+}
+
+// Check if user is a driver - FIXED: This should check session role, not database
+if ($_SESSION['role'] !== 'driver') {
+    redirect('index.php?error=access_denied');
 }
 
 $driver_id = $_SESSION['user_id'];
 $today = date('Y-m-d');
 
-// Get driver info
+// Get driver info - but don't block access if driver profile is incomplete
 $driver_query = "SELECT u.*, d.license_number, d.employment_date 
                  FROM users u
-                 JOIN drivers d ON u.user_id = d.driver_id
+                 LEFT JOIN drivers d ON u.user_id = d.driver_id
                  WHERE u.user_id = '$driver_id'";
 $driver_result = mysqli_query($conn, $driver_query);
-$driver = mysqli_fetch_assoc($driver_result);
+
+if (!$driver_result) {
+    // Log error but don't stop execution
+    error_log("Database error in driver query: " . mysqli_error($conn));
+    $driver = null;
+} else {
+    $driver = mysqli_fetch_assoc($driver_result);
+}
+
+// Initialize driver data with default values to avoid null warnings
+if ($driver) {
+    $driver['license_number'] = $driver['license_number'] ?? 'Not Assigned';
+    $driver['employment_date'] = $driver['employment_date'] ?? null;
+    $driver['status'] = $driver['status'] ?? 'active';
+} else {
+    // Create a minimal driver array with default values
+    $driver = [
+        'license_number' => 'Not Assigned',
+        'employment_date' => null,
+        'status' => 'active'
+    ];
+}
 
 // Get today's assigned trips
 $today_trips_query = "SELECT t.*, b.bus_number, b.capacity,
@@ -63,6 +89,14 @@ $today_summary_query = "SELECT
                         AND a.scanned_by = '$driver_id'";
 $today_summary_result = mysqli_query($conn, $today_summary_query);
 $today_summary = mysqli_fetch_assoc($today_summary_result);
+if (!$today_summary) {
+    $today_summary = [
+        'total_scans' => 0,
+        'successful' => 0,
+        'invalid' => 0,
+        'duplicate' => 0
+    ];
+}
 
 // Get driver statistics
 $driver_stats_query = "SELECT 
@@ -74,6 +108,13 @@ $driver_stats_query = "SELECT
                        AND t.trip_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)";
 $driver_stats_result = mysqli_query($conn, $driver_stats_query);
 $driver_stats = mysqli_fetch_assoc($driver_stats_result);
+if (!$driver_stats) {
+    $driver_stats = [
+        'total_trips' => 0,
+        'days_worked' => 0,
+        'total_passengers' => 0
+    ];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -96,11 +137,18 @@ $driver_stats = mysqli_fetch_assoc($driver_stats_result);
                 <div class="avatar">
                     <i class="fas fa-user-tie"></i>
                 </div>
-                <h4><?php echo $_SESSION['name']; ?></h4>
+                <h4><?php echo htmlspecialchars($_SESSION['name']); ?></h4>
                 <p>Bus Driver</p>
                 <p class="user-info">
-                    <i class="fas fa-id-card"></i> <?php echo $driver['license_number']; ?><br>
-                    <i class="fas fa-calendar"></i> <?php echo date('Y', strtotime($driver['employment_date'])); ?> - Present
+                    <i class="fas fa-id-card"></i> <?php echo htmlspecialchars($driver['license_number']); ?><br>
+                    <i class="fas fa-calendar"></i> 
+                    <?php 
+                    if (!empty($driver['employment_date']) && $driver['employment_date'] != '0000-00-00') {
+                        echo date('Y', strtotime($driver['employment_date'])) . ' - Present';
+                    } else {
+                        echo 'Not Available';
+                    }
+                    ?>
                 </p>
             </div>
             <nav class="sidebar-nav">
@@ -128,7 +176,7 @@ $driver_stats = mysqli_fetch_assoc($driver_stats_result);
             <header class="dashboard-header">
                 <h1>Driver Dashboard</h1>
                 <div class="header-actions">
-                    <span class="welcome">Welcome, <?php echo $_SESSION['name']; ?>!</span>
+                    <span class="welcome">Welcome, <?php echo htmlspecialchars($_SESSION['name']); ?>!</span>
                     <span class="current-time"><?php echo date('l, F j, Y'); ?></span>
                 </div>
             </header>
@@ -207,14 +255,14 @@ $driver_stats = mysqli_fetch_assoc($driver_stats_result);
                                 <div class="trip-header">
                                     <div>
                                         <h3><?php echo date('h:i A', $departure_time); ?></h3>
-                                        <p class="trip-route"><?php echo $trip['route']; ?></p>
+                                        <p class="trip-route"><?php echo htmlspecialchars($trip['route']); ?></p>
                                     </div>
                                     <span class="trip-status <?php echo $status_class; ?>">
                                         <?php echo $status_text; ?>
                                     </span>
                                 </div>
                                 <div class="trip-body">
-                                    <p><i class="fas fa-bus"></i> Bus <?php echo $trip['bus_number']; ?></p>
+                                    <p><i class="fas fa-bus"></i> Bus <?php echo htmlspecialchars($trip['bus_number']); ?></p>
                                     <p><i class="fas fa-chair"></i> <?php echo $trip['booked_count']; ?>/<?php echo $trip['capacity']; ?> booked</p>
                                     <p><i class="fas fa-clock"></i> 
                                         <?php 
@@ -280,8 +328,8 @@ $driver_stats = mysqli_fetch_assoc($driver_stats_result);
                                             <tr>
                                                 <td><?php echo date('d M', strtotime($trip['trip_date'])); ?></td>
                                                 <td><?php echo date('h:i A', strtotime($trip['departure_time'])); ?></td>
-                                                <td><?php echo $trip['route']; ?></td>
-                                                <td><?php echo $trip['bus_number']; ?></td>
+                                                <td><?php echo htmlspecialchars($trip['route']); ?></td>
+                                                <td><?php echo htmlspecialchars($trip['bus_number']); ?></td>
                                                 <td><?php echo $trip['booked_count']; ?></td>
                                                 <td>
                                                     <span class="status-badge status-scheduled">
@@ -369,8 +417,8 @@ $driver_stats = mysqli_fetch_assoc($driver_stats_result);
                                             <i class="fas fa-<?php echo $result_icon; ?>"></i>
                                         </div>
                                         <div class="scan-info">
-                                            <p class="scan-student"><?php echo $scan['student_name'] . ' ' . $scan['student_surname']; ?></p>
-                                            <p class="scan-details"><?php echo $scan['route']; ?></p>
+                                            <p class="scan-student"><?php echo htmlspecialchars($scan['student_name'] . ' ' . $scan['student_surname']); ?></p>
+                                            <p class="scan-details"><?php echo htmlspecialchars($scan['route']); ?></p>
                                             <p class="scan-time"><?php echo date('H:i', strtotime($scan['scanned_time'])); ?></p>
                                         </div>
                                         <div class="scan-result">
@@ -422,15 +470,32 @@ $driver_stats = mysqli_fetch_assoc($driver_stats_result);
                         <div class="driver-info">
                             <div class="info-item">
                                 <span class="info-label">License Number</span>
-                                <span class="info-value"><?php echo $driver['license_number']; ?></span>
+                                <span class="info-value"><?php echo htmlspecialchars($driver['license_number']); ?></span>
                             </div>
                             <div class="info-item">
                                 <span class="info-label">Employment Date</span>
-                                <span class="info-value"><?php echo date('d M Y', strtotime($driver['employment_date'])); ?></span>
+                                <span class="info-value">
+                                    <?php 
+                                    if (!empty($driver['employment_date']) && $driver['employment_date'] != '0000-00-00') {
+                                        echo date('d M Y', strtotime($driver['employment_date']));
+                                    } else {
+                                        echo 'Not Available';
+                                    }
+                                    ?>
+                                </span>
                             </div>
                             <div class="info-item">
                                 <span class="info-label">Years of Service</span>
-                                <span class="info-value"><?php echo date('Y') - date('Y', strtotime($driver['employment_date'])); ?> years</span>
+                                <span class="info-value">
+                                    <?php 
+                                    if (!empty($driver['employment_date']) && $driver['employment_date'] != '0000-00-00') {
+                                        $years = date('Y') - date('Y', strtotime($driver['employment_date']));
+                                        echo $years . ' years';
+                                    } else {
+                                        echo 'Not Available';
+                                    }
+                                    ?>
+                                </span>
                             </div>
                             <div class="info-item">
                                 <span class="info-label">Account Status</span>
